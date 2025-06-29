@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+/// @title InsuranceSystem - Smart contract for managing insurance policies and claims
+/// @author 
+/// @notice This contract allows owners to assign roles, admins to issue policies and manage claims, and users to submit insurance claims.
+contract InsuranceSystem {
+    address public contractOwner;
+
+    // Define roles
+    enum Role { Owner, Admin, User }
+
+    // Define claim status states
+    enum ClaimStatus { Submitted, Approved, Rejected, Paid }
+
+    // Policy structure
+    struct Policy {
+        uint policyId;
+        address holder;
+        string policyDetails;
+        uint coverageAmount;
+        bool isActive;
+    }
+
+    // Claim structure
+    struct Claim {
+        uint claimId;
+        uint policyId;
+        address claimant;
+        string description;
+        ClaimStatus status;
+        uint claimAmount;
+    }
+
+    // Role mapping
+    mapping(address => Role) public roles;
+
+    // Policy management
+    mapping(uint => Policy) public policies;
+    mapping(address => uint[]) public userPolicies;
+    uint public policyCounter;
+
+    // Claim management
+    mapping(uint => Claim) public claims;
+    mapping(address => uint[]) public userClaims;
+    uint public claimCounter;
+
+    // Events
+    event PolicyIssued(uint policyId, address indexed holder);
+    event ClaimSubmitted(uint claimId, uint policyId, address indexed user);
+    event ClaimStatusUpdated(uint claimId, ClaimStatus status);
+    event RoleAssigned(address indexed user, Role role);
+
+    // Modifiers
+    modifier onlyOwner() {
+        require(roles[msg.sender] == Role.Owner, "Not contract owner");
+        _;
+    }
+
+    modifier onlyAdmin() {
+        require(roles[msg.sender] == Role.Admin || roles[msg.sender] == Role.Owner, "Not admin");
+        _;
+    }
+
+    modifier onlyUser() {
+        require(roles[msg.sender] == Role.User, "Not user");
+        _;
+    }
+
+    /// @dev Contract constructor assigns deployer as contract owner and admin
+    constructor() {
+        contractOwner = msg.sender;
+        roles[msg.sender] = Role.Owner;
+    }
+
+    /// @notice Assign role to an address
+    /// @param user The address to assign role to
+    /// @param role Role to assign (Owner, Admin, User)
+    function assignRole(address user, Role role) external onlyOwner {
+        require(role == Role.Admin || role == Role.User, "Only Admin/User roles assignable");
+        roles[user] = role;
+        emit RoleAssigned(user, role);
+    }
+
+    /// @notice Issue a new insurance policy
+    /// @param user The policyholder's address
+    /// @param details Policy details (e.g., policy terms)
+    /// @param amount The coverage amount
+    function issuePolicy(address user, string memory details, uint amount) external onlyAdmin {
+        require(roles[user] == Role.User, "Address is not a registered user");
+
+        policyCounter++;
+        policies[policyCounter] = Policy(policyCounter, user, details, amount, true);
+        userPolicies[user].push(policyCounter);
+
+        emit PolicyIssued(policyCounter, user);
+    }
+
+    /// @notice Deactivate an insurance policy
+    /// @param policyId The ID of the policy to deactivate
+    function deactivatePolicy(uint policyId) external onlyAdmin {
+        policies[policyId].isActive = false;
+    }
+
+    /// @notice View all policy IDs for a specific user
+    /// @param user The user address
+    function getUserPolicies(address user) external view returns (uint[] memory) {
+        return userPolicies[user];
+    }
+
+    /// @notice Retrieve policy details by ID
+    /// @param policyId The policy ID
+    function getPolicy(uint policyId) external view returns (Policy memory) {
+        return policies[policyId];
+    }
+
+    /// @notice Submit a claim for an active policy
+    /// @param policyId The ID of the policy being claimed
+    /// @param description Description of the claim
+    /// @param amount Claim amount
+    function submitClaim(uint policyId, string memory description, uint amount) external onlyUser {
+        Policy memory policy = policies[policyId];
+        require(policy.isActive, "Policy is not active");
+        require(policy.holder == msg.sender, "You are not the policyholder");
+
+        claimCounter++;
+        claims[claimCounter] = Claim(claimCounter, policyId, msg.sender, description, ClaimStatus.Submitted, amount);
+        userClaims[msg.sender].push(claimCounter);
+
+        emit ClaimSubmitted(claimCounter, policyId, msg.sender);
+    }
+
+    /// @notice Update the status of a submitted claim
+    /// @param claimId The ID of the claim
+    /// @param status New claim status
+    function updateClaimStatus(uint claimId, ClaimStatus status) external onlyAdmin {
+        require(claims[claimId].status == ClaimStatus.Submitted, "Only submitted claims can be updated");
+        claims[claimId].status = status;
+
+        emit ClaimStatusUpdated(claimId, status);
+    }
+
+    /// @notice Retrieve claim details by ID
+    /// @param claimId The claim ID
+    function getClaim(uint claimId) external view returns (Claim memory) {
+        return claims[claimId];
+    }
+
+    /// @notice View all claim IDs for a specific user
+    /// @param user The user address
+    function getUserClaims(address user) external view returns (uint[] memory) {
+        return userClaims[user];
+    }
+}
